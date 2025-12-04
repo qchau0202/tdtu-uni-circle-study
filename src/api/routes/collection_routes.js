@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const collectionController = require('../controllers/collection.controller');
+const collectionController = require('../controllers/collection_controller');
 
 /**
  * @swagger

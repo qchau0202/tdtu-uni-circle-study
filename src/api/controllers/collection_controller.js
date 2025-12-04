@@ -3,10 +3,26 @@ const { getSupabaseClient } = require('../../infrastructure/database/supabase');
 const getAllCollections = async (req, res, next) => {
   try {
     const supabase = getSupabaseClient();
+    const { is_public, tag } = req.query;
 
-    const { data, error } = await supabase
-      .from('study_session')
-      .select('*');
+    let query = supabase
+      .from('collections')
+      .select(`
+        *,
+        owner:students(id, student_code, email)
+      `);
+
+    // Filter by is_public if provided
+    if (is_public !== undefined) {
+      query = query.eq('is_public', is_public === 'true');
+    }
+
+    // Filter by tag if provided (using array contains)
+    if (tag) {
+      query = query.contains('tags', [tag]);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return res.status(400).json({
@@ -31,8 +47,11 @@ const getCollectionById = async (req, res, next) => {
     const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
-      .from('study_session')
-      .select('*')
+      .from('collections')
+      .select(`
+        *,
+        owner:students(id, student_code, email)
+      `)
       .eq('id', id)
       .single();
 
@@ -59,7 +78,7 @@ const createCollection = async (req, res, next) => {
     const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
-      .from('study_session')
+      .from('collections')
       .insert([collectionData])
       .select();
 
@@ -88,7 +107,7 @@ const updateCollection = async (req, res, next) => {
     const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
-      .from('study_session')
+      .from('collections')
       .update(collectionData)
       .eq('id', id)
       .select();
@@ -117,7 +136,7 @@ const deleteCollection = async (req, res, next) => {
     const supabase = getSupabaseClient();
 
     const { error } = await supabase
-      .from('study_session')
+      .from('collections')
       .delete()
       .eq('id', id);
 

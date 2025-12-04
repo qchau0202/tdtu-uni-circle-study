@@ -4,9 +4,9 @@ const helmet = require('helmet');
 const swaggerUi = require('swagger-ui-express');
 const config = require('./config');
 const swaggerSpec = require('./config/swagger');
-const collectionRoutes = require('./api/routes/collection.routes');
-const { authenticateJWT } = require('./api/middlewares/auth.middleware');
-const { rateLimiter } = require('./api/middlewares/rateLimiter.middleware');
+const collectionRoutes = require('./api/routes/collection_routes');
+const { authenticateJWT } = require('./api/middlewares/auth_middleware');
+const { rateLimiter } = require('./api/middlewares/rate_limiter_middleware');
 
 const app = express();
 
