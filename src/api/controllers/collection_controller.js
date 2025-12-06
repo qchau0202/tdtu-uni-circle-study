@@ -1,42 +1,38 @@
-const { getSupabaseClient } = require('../../infrastructure/database/supabase');
+const { validateCreateCollection, validateUpdateCollection } = require('../validators/collection_validator');
+const collectionService = require('../../domain/services/collection_service');
 
 const getAllCollections = async (req, res, next) => {
   try {
-    const supabase = getSupabaseClient();
-    const { is_public, tag } = req.query;
+    const token = req.headers.authorization?.substring(7);
+    const currentUserId = req.user?.id;
+    const { is_public, tag, filter, search } = req.query;
 
-    let query = supabase
-      .from('collections')
-      .select(`
-        *,
-        owner:students(id, student_code, email)
-      `);
+    const filters = {
+      is_public,
+      tag,
+      filter,
+      search,
+      currentUserId
+    };
 
-    // Filter by is_public if provided
-    if (is_public !== undefined) {
-      query = query.eq('is_public', is_public === 'true');
-    }
+    const result = await collectionService.getAllCollections(token, filters);
 
-    // Filter by tag if provided (using array contains)
-    if (tag) {
-      query = query.contains('tags', [tag]);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      return res.status(400).json({
+    res.status(200).json({
+      success: true,
+      count: result.count,
+      filter: result.filter,
+      collections: result.collections
+    });
+  } catch (error) {
+    if (error.message === 'Authentication required to view your collections') {
+      return res.status(401).json({
         error: {
+          code: 'AUTHENTICATION_REQUIRED',
           message: error.message,
-          status: 400
+          status: 401
         }
       });
     }
-
-    res.status(200).json({
-      collections: data
-    });
-  } catch (error) {
     next(error);
   }
 };
@@ -44,20 +40,26 @@ const getAllCollections = async (req, res, next) => {
 const getCollectionById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const supabase = getSupabaseClient();
+    const token = req.headers.authorization?.substring(7);
 
-    const { data, error } = await supabase
-      .from('collections')
-      .select(`
-        *,
-        owner:students(id, student_code, email)
-      `)
-      .eq('id', id)
-      .single();
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_UUID',
+          message: 'Invalid collection ID format',
+          status: 400
+        }
+      });
+    }
 
-    if (error) {
+    const collection = await collectionService.getCollectionById(token, id);
+
+    if (!collection) {
       return res.status(404).json({
         error: {
+          code: 'COLLECTION_NOT_FOUND',
           message: 'Collection not found',
           status: 404
         }
@@ -65,7 +67,8 @@ const getCollectionById = async (req, res, next) => {
     }
 
     res.status(200).json({
-      collection: data
+      success: true,
+      collection
     });
   } catch (error) {
     next(error);
@@ -74,26 +77,40 @@ const getCollectionById = async (req, res, next) => {
 
 const createCollection = async (req, res, next) => {
   try {
+    const currentUserId = req.user?.id;
+    const token = req.headers.authorization?.substring(7);
+
+    if (!currentUserId) {
+      return res.status(401).json({
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Authentication required to create collection',
+          status: 401
+        }
+      });
+    }
+
     const collectionData = req.body;
-    const supabase = getSupabaseClient();
 
-    const { data, error } = await supabase
-      .from('collections')
-      .insert([collectionData])
-      .select();
-
-    if (error) {
+    // Validate collection data
+    const validationErrors = validateCreateCollection(collectionData);
+    if (validationErrors.length > 0) {
       return res.status(400).json({
         error: {
-          message: error.message,
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: validationErrors,
           status: 400
         }
       });
     }
 
+    const collection = await collectionService.createCollection(token, collectionData, currentUserId);
+
     res.status(201).json({
+      success: true,
       message: 'Collection created successfully',
-      collection: data[0]
+      collection
     });
   } catch (error) {
     next(error);
@@ -103,29 +120,73 @@ const createCollection = async (req, res, next) => {
 const updateCollection = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const collectionData = req.body;
-    const supabase = getSupabaseClient();
+    const currentUserId = req.user?.id;
+    const token = req.headers.authorization?.substring(7);
 
-    const { data, error } = await supabase
-      .from('collections')
-      .update(collectionData)
-      .eq('id', id)
-      .select();
+    if (!currentUserId) {
+      return res.status(401).json({
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Authentication required to update collection',
+          status: 401
+        }
+      });
+    }
 
-    if (error) {
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
       return res.status(400).json({
         error: {
-          message: error.message,
+          code: 'INVALID_UUID',
+          message: 'Invalid collection ID format',
           status: 400
         }
       });
     }
 
+    const collectionData = req.body;
+
+    // Validate collection data
+    const validationErrors = validateUpdateCollection(collectionData);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: validationErrors,
+          status: 400
+        }
+      });
+    }
+
+    const collection = await collectionService.updateCollection(token, id, collectionData, currentUserId);
+
+    if (!collection) {
+      return res.status(404).json({
+        error: {
+          code: 'COLLECTION_NOT_FOUND',
+          message: 'Collection not found',
+          status: 404
+        }
+      });
+    }
+
     res.status(200).json({
+      success: true,
       message: 'Collection updated successfully',
-      collection: data[0]
+      collection
     });
   } catch (error) {
+    if (error.message === 'FORBIDDEN') {
+      return res.status(403).json({
+        error: {
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to update this collection',
+          status: 403
+        }
+      });
+    }
     next(error);
   }
 };
@@ -133,26 +194,57 @@ const updateCollection = async (req, res, next) => {
 const deleteCollection = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const supabase = getSupabaseClient();
+    const currentUserId = req.user?.id;
+    const token = req.headers.authorization?.substring(7);
 
-    const { error } = await supabase
-      .from('collections')
-      .delete()
-      .eq('id', id);
+    if (!currentUserId) {
+      return res.status(401).json({
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Authentication required to delete collection',
+          status: 401
+        }
+      });
+    }
 
-    if (error) {
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
       return res.status(400).json({
         error: {
-          message: error.message,
+          code: 'INVALID_UUID',
+          message: 'Invalid collection ID format',
           status: 400
         }
       });
     }
 
+    const result = await collectionService.deleteCollection(token, id, currentUserId);
+
+    if (!result) {
+      return res.status(404).json({
+        error: {
+          code: 'COLLECTION_NOT_FOUND',
+          message: 'Collection not found',
+          status: 404
+        }
+      });
+    }
+
     res.status(200).json({
+      success: true,
       message: 'Collection deleted successfully'
     });
   } catch (error) {
+    if (error.message === 'FORBIDDEN') {
+      return res.status(403).json({
+        error: {
+          code: 'FORBIDDEN',
+          message: 'You do not have permission to delete this collection',
+          status: 403
+        }
+      });
+    }
     next(error);
   }
 };

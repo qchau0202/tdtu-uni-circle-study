@@ -14,21 +14,29 @@ const options = {
         },
         servers: [
             {
-                url: `http://localhost:${config.port}`,
+                url: `http://localhost:${config.port}/api/collections`,
                 description: 'Development server',
             },
         ],
         components: {
             securitySchemes: {
+                ApiKeyAuth: {
+                    type: 'apiKey',
+                    in: 'header',
+                    name: 'x-api-key',
+                    description: 'API key for service authentication',
+                },
                 BearerAuth: {
                     type: 'http',
                     scheme: 'bearer',
                     bearerFormat: 'JWT',
+                    description: 'JWT token for user authentication',
                 },
             },
         },
         security: [
             {
+                ApiKeyAuth: [],
                 BearerAuth: [],
             },
         ],
